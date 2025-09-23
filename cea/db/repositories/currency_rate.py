@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,8 +11,11 @@ class CurrencyRateRepository(BaseRepository[CurrencyRate]):
     async def list_by_date(
         self, session: AsyncSession, *, rate_date: date | None
     ) -> list[CurrencyRate]:
+        effective_date = rate_date or date.today()
         return (
-            await self._read(session, where=self.model.rate_date == rate_date)
+            await self._read(
+                session, where=self.model.rate_date == effective_date
+            )
         ).scalars().all()
 
     async def get_latest_by_abbreviation(
