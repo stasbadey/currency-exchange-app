@@ -9,12 +9,12 @@ class DealOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
-    created_at: datetime
+    created_at: datetime.datetime
 
     amount_from: float
     amount_to: float | None
-    cur_from: str
-    cur_to: str
+    currency_from: str
+    currency_to: str
 
     rate_from: float | None
     scale_from: int | None
@@ -26,8 +26,8 @@ class DealOut(BaseModel):
 
 class ExchangePreviewIn(BaseModel):
     amount_from: float
-    cur_from: str
-    cur_to: str
+    currency_from: str
+    currency_to: str
 
 
 class ExchangePreviewOut(BaseModel):
@@ -59,11 +59,11 @@ class DealReportItem(BaseModel):
 
 class PendingDealOut(BaseModel):
     id: str
-    created_at: datetime
+    created_at: datetime.datetime
     amount_from: float
     amount_to: float | None
-    cur_from: str
-    cur_to: str
+    currency_from: str
+    currency_to: str
     rate_from: float | None
     scale_from: int | None
     rate_to: float | None

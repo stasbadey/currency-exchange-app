@@ -7,7 +7,7 @@ class CurrencyRateOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    cur_abbr: str
-    cur_scale: int
-    cur_rate: float
+    abbreviation: str
+    scale: int
+    rate: float
     rate_date: datetime.date
