@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
 from cea.api.routers import router
+from cea.api.docs import openapi_tags
 from cea.db.database import async_session
 from cea.services.rate_loader import RateLoaderService
 from cea.services.scheduler import DailyRatesScheduler, _parse_time_utc
@@ -63,7 +64,12 @@ async def lifespan(app: FastAPI):
             await scheduler.stop()
 
 
-app = FastAPI(title='Currency Exchange Service', lifespan=lifespan)
+app = FastAPI(
+    title='Currency Exchange Service',
+    description='API for currency rates and exchange deals',
+    openapi_tags=openapi_tags,
+    lifespan=lifespan,
+)
 
 app.include_router(router)
 

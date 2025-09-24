@@ -12,41 +12,64 @@ from cea.schemas.deal import (
     PendingDealOut,
 )
 from cea.services.processor import deal_service
+from cea.api import docs
 
 router = APIRouter()
 
 
 @router.post(
-    '/exchange/preview', 
+    '/exchange/preview',
     response_model=ExchangePreviewOut,
     summary='Preview exchange',
+    description=docs.preview_description,
+    responses=docs.preview_responses,
+    openapi_extra={
+        "requestBody": {
+            "content": {
+                "application/json": {"example": docs.preview_request_example}
+            }
+        }
+    },
 )
 async def preview_exchange(payload: ExchangePreviewIn, session: SessionDep):
     return await deal_service.preview(session, payload)
 
 
 @router.post(
-    '/exchange/confirm', 
-    response_model=ExchangeConfirmOut, 
+    '/exchange/confirm',
+    response_model=ExchangeConfirmOut,
     summary='Confirm exchange',
+    description=docs.confirm_description,
+    responses=docs.confirm_responses,
+    openapi_extra={
+        "requestBody": {
+            "content": {
+                "application/json": {"example": docs.confirm_request_example}
+            }
+        }
+    },
 )
 async def confirm_exchange(payload: ExchangeConfirmIn, session: SessionDep):
     return await deal_service.confirm(session, payload)
 
 
 @router.get(
-    '/deals/pending', 
-    response_model=list[PendingDealOut], 
+    '/deals/pending',
+    response_model=list[PendingDealOut],
     summary='List of Pending deals',
+    description=docs.pending_description,
+    responses=docs.pending_responses,
 )
 async def list_pending_deals(session: SessionDep):
     return await deal_service.list_pending(session)
 
 
 @router.get(
-    '/deals/report', 
-    response_model=list[DealReportItem], 
-    summary='Deal report'
+    '/deals/report',
+    response_model=list[DealReportItem],
+    summary='Deal report',
+    description=docs.report_description,
+    responses=docs.report_responses,
 )
 async def deals_report(
     session: SessionDep,

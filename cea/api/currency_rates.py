@@ -5,14 +5,17 @@ from fastapi import APIRouter, Query
 from cea.dependencies import SessionDep
 from cea.schemas.currency import CurrencyRateOut
 from cea.services.currency_rate_service import CurrencyRateService
+from cea.api import docs
 
 router = APIRouter()
 
 
 @router.get(
-    '/currencies', 
+    '/currencies',
     response_model=list[CurrencyRateOut],
     summary='List of Currency Rates',
+    description=docs.currencies_description,
+    responses=docs.currencies_responses,
 )
 async def list_currency_rates(
     session: SessionDep,
