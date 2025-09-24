@@ -4,11 +4,20 @@ from contextlib import asynccontextmanager
 from datetime import date
 
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 
 from cea.api.routers import router
 from cea.db.database import async_session
 from cea.services.rate_loader import RateLoaderService
 from cea.services.scheduler import DailyRatesScheduler, _parse_time_utc
+from cea.services.errors import (
+    ServiceError,
+    ValidationError,
+    NotFoundError,
+    ConflictError,
+    ExternalServiceError,
+    DependencyError,
+)
 
 logging.basicConfig(
     level=os.getenv('LOG_LEVEL', 'INFO'),
@@ -26,9 +35,14 @@ async def lifespan(app: FastAPI):
     if _enabled('LOAD_RATES_ON_STARTUP', 'true'):
         service = RateLoaderService()
         async with async_session() as session:
-            await service.fetch_and_upsert_for_date(
-                session, ondate=date.today()
-            )
+            try:
+                await service.fetch_and_upsert_for_date(
+                    session, ondate=date.today()
+                )
+            except ServiceError as e:
+                logging.getLogger(__name__).warning(
+                    'Startup rate load skipped due to service error: %s', e
+                )
 
     # Daily scheduler
     scheduler: DailyRatesScheduler | None = None
@@ -52,3 +66,19 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title='Currency Exchange Service', lifespan=lifespan)
 
 app.include_router(router)
+
+# Exception handlers for service-layer errors
+
+_ERROR_CODE_MAP: dict[type[ServiceError], int] = {
+    ValidationError: 400,
+    NotFoundError: 404,
+    ConflictError: 409,
+    ExternalServiceError: 502,
+    DependencyError: 503,
+}
+
+
+@app.exception_handler(ServiceError)
+async def handle_service_error(_, exc: ServiceError):
+    status = _ERROR_CODE_MAP.get(type(exc), 500)
+    return JSONResponse(status_code=status, content={"detail": str(exc)})

@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from cea.clients.nbrb import NBRBClient
 from cea.db.models.currency_rate import CurrencyRate
+from cea.services.errors import ExternalServiceError
 
 
 class RateLoaderService:
@@ -22,7 +23,7 @@ class RateLoaderService:
         elif isinstance(dt_raw, datetime):
             dt = dt_raw
         else:
-            raise ValueError('NBRB item missing `Date`')
+            raise ExternalServiceError('NBRB item missing `Date`')
 
         return {
             'abbreviation': item['Cur_Abbreviation'],
@@ -35,7 +36,11 @@ class RateLoaderService:
         self, session: AsyncSession, *, ondate: date | None = None
     ) -> int:
         """Fetch rates and upsert into currency_rates. Returns affected rows count."""
-        items = await self.client.get_daily_rates(ondate)
+        try:
+            items = await self.client.get_daily_rates(ondate)
+        except Exception as e:
+            # Normalize any client exception to service-layer error
+            raise ExternalServiceError(str(e)) from e
         if not items:
             return 0
 

@@ -1,11 +1,17 @@
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 
-from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cea.db.repositories import currency_rate_repository, deal_repository
 from cea.enums import ConfirmActionEnum, DealStatusEnum
+from cea.db.errors import RepositoryError, RepositoryIntegrityConflictError
+from cea.services.errors import (
+    ConflictError,
+    DependencyError,
+    NotFoundError,
+    ValidationError,
+)
 from cea.schemas.deal import (
     DealReportItem,
     ExchangeConfirmIn,
@@ -32,20 +38,34 @@ class DealService:
     async def preview(
         self, session: AsyncSession, payload: ExchangePreviewIn
     ) -> ExchangePreviewOut:
-        rate_from_row = (
-            await currency_rate_repository.get_latest_by_abbreviation(
-                session, payload.currency_from
+        # Basic input validations
+        if payload.amount_from is None or payload.amount_from <= 0:
+            raise ValidationError('amount_from must be a positive number')
+        if payload.currency_from == payload.currency_to:
+            raise ValidationError('currency_from and currency_to must differ')
+
+        try:
+            rate_from_row = (
+                await currency_rate_repository.get_latest_by_abbreviation(
+                    session, payload.currency_from
+                )
             )
-        )
-        rate_to_row = (
-            await currency_rate_repository.get_latest_by_abbreviation(
-                session, payload.currency_to
+            rate_to_row = (
+                await currency_rate_repository.get_latest_by_abbreviation(
+                    session, payload.currency_to
+                )
             )
-        )
+        except Exception as e:
+            raise DependencyError(str(e)) from e
+
         if not rate_from_row or not rate_to_row:
-            raise HTTPException(
-                status_code=400, detail='Unknown currency abbreviation'
-            )
+            raise ValidationError('Unknown currency abbreviation')
+
+        # Defensive checks against invalid rate data
+        if rate_from_row.scale == 0 or rate_to_row.scale == 0:
+            raise DependencyError('Currency scale cannot be zero')
+        if float(rate_to_row.rate) == 0.0:
+            raise DependencyError('Target currency rate cannot be zero')
 
         amount_to = self._calc_amount_to(
             Decimal(str(payload.amount_from)),
@@ -55,18 +75,24 @@ class DealService:
             rate_to_row.scale,
         )
 
-        deal = await deal_repository.create(
-            session,
-            amount_from=float(payload.amount_from),
-            amount_to=float(amount_to),
-            currency_from=payload.currency_from,
-            currency_to=payload.currency_to,
-            rate_from=float(rate_from_row.rate),
-            scale_from=rate_from_row.scale,
-            rate_to=float(rate_to_row.rate),
-            scale_to=rate_to_row.scale,
-            status=DealStatusEnum.PENDING,
-        )
+        try:
+            deal = await deal_repository.create(
+                session,
+                amount_from=float(payload.amount_from),
+                amount_to=float(amount_to),
+                currency_from=payload.currency_from,
+                currency_to=payload.currency_to,
+                rate_from=float(rate_from_row.rate),
+                scale_from=rate_from_row.scale,
+                rate_to=float(rate_to_row.rate),
+                scale_to=rate_to_row.scale,
+                status=DealStatusEnum.PENDING,
+            )
+        except RepositoryIntegrityConflictError as e:
+            # Should not normally happen for UUID PK, but map to conflict
+            raise ConflictError(str(e)) from e
+        except Exception as e:
+            raise DependencyError(str(e)) from e
 
         return ExchangePreviewOut(
             deal_id=deal.id,
@@ -81,22 +107,26 @@ class DealService:
     async def confirm(
         self, session: AsyncSession, payload: ExchangeConfirmIn
     ) -> ExchangeConfirmOut:
-        deal = await deal_repository.get_by_id(session, payload.deal_id)
+        try:
+            deal = await deal_repository.get_by_id(session, payload.deal_id)
+        except Exception as e:
+            raise DependencyError(str(e)) from e
         if not deal:
-            raise HTTPException(status_code=404, detail='Deal not found')
+            raise NotFoundError('Deal not found')
         if deal.status != DealStatusEnum.PENDING:
-            raise HTTPException(
-                status_code=409, detail='Deal already finalized'
-            )
+            raise ConflictError('Deal already finalized')
 
         new_status = (
             DealStatusEnum.CONFIRMED
             if payload.result == ConfirmActionEnum.CONFIRM
             else DealStatusEnum.REJECTED
         )
-        updated = await deal_repository.update_by_id(
-            session, payload.deal_id, status=new_status
-        )
+        try:
+            updated = await deal_repository.update_by_id(
+                session, payload.deal_id, status=new_status
+            )
+        except Exception as e:
+            raise DependencyError(str(e)) from e
         # Our repository returns None when no 'returning' is specified; fetch it explicitly
         if updated is None:
             updated_model = await deal_repository.get_by_id(
@@ -105,9 +135,7 @@ class DealService:
         else:
             updated_model = updated  # type: ignore[assignment]
         if not updated_model:
-            raise HTTPException(
-                status_code=404, detail='Deal not found after update'
-            )
+            raise NotFoundError('Deal not found after update')
         return ExchangeConfirmOut(
             id=updated_model.id, status=updated_model.status
         )
@@ -115,7 +143,10 @@ class DealService:
     async def list_pending(
         self, session: AsyncSession
     ) -> list[PendingDealOut]:
-        deals = await deal_repository.list_pending(session)
+        try:
+            deals = await deal_repository.list_pending(session)
+        except Exception as e:
+            raise DependencyError(str(e)) from e
         return [
             PendingDealOut(
                 id=d.id,
@@ -144,9 +175,15 @@ class DealService:
         date_to: datetime,
         currency: str | None = None,
     ) -> list[DealReportItem]:
-        in_sum, out_sum, counts = await deal_repository.sums_by_currency(
-            session, date_from=date_from, date_to=date_to, currency=currency
-        )
+        if date_from > date_to:
+            raise ValidationError('date_from must be <= date_to')
+
+        try:
+            in_sum, out_sum, counts = await deal_repository.sums_by_currency(
+                session, date_from=date_from, date_to=date_to, currency=currency
+            )
+        except RepositoryError as e:
+            raise DependencyError(str(e)) from e
         currencies = (
             set(in_sum.keys()) | set(out_sum.keys()) | set(counts.keys())
         )
