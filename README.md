@@ -38,12 +38,6 @@ docker compose --env-file=../.env run --rm app alembic upgrade head
 docker compose --env-file=../.env up app
 ```
 
-5) Health check:
-
-```
-curl http://localhost:8000/ping
-```
-
 
 ## Environment Variables
 
@@ -105,7 +99,6 @@ alembic upgrade head
 
 ## API Overview
 
-- `GET /ping` — health check.
 - `GET /currencies?rate_date=YYYY-MM-DD` — list currency rates for a date; without `rate_date` uses today, or falls back to the latest available date.
   - Response item: `{ id, abbreviation, scale, rate, rate_date }`.
 - `POST /exchange/preview` — preview conversion and create PENDING deal.
@@ -122,6 +115,4 @@ alembic upgrade head
 ## Notes & Roadmap
 
 - Implemented:
-  - Infrastructure (Docker/Compose, .env.example), DB models & schemas, API endpoints, NBRB client, idempotent loader, daily scheduler.
-- Remaining quality tasks (optional):
-  - Logging configuration, docstrings, linters (flake8/isort/black) and CI, extra indices (e.g., deals.status), README API examples expansion.
+  - Infrastructure (Docker/Compose, .env.example), DB models & schemas, API endpoints, NBRB client, idempotent loader, daily scheduler, logging configuration, extra indices (e.g., deals.status), README API examples expansion.
